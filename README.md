@@ -81,9 +81,10 @@ You can configure different sounds for different devices using the interactive s
    ```bash
    usbsound set-sound
    ```
-3. The interactive UI will guide you to:
-   - Enter your device's Vendor ID (VID) and Product ID (PID).
-   - Select a sound file directly from the `sounds/` folder using your arrow keys.
+3. The interactive UI will ask you:
+   - Whether you want to configure the **Default Sound** (for ALL USB devices) or a **Specific Device**.
+   - If Specific, it will ask for the Vendor ID (VID) and Product ID (PID).
+   - Finally, you can select a sound file directly from the `sounds/` folder using your arrow keys.
    - Or, manually enter an absolute path to a custom audio file.
 
 *(For more information, run the command `usbsound --help`)*

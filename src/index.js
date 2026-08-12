@@ -29,12 +29,15 @@ program
 
     usbDetect.on('add', (device) => {
             const deviceId = `${device.vendorId}:${device.productId}`;
-            let defaultSoundPath = path.join(path.dirname(process.execPath), 'sounds', 'default.mp3');
+            let defaultSoundPath = config['default_sound'] || path.join(path.dirname(process.execPath), 'sounds', 'default.mp3');
             if (!fs.existsSync(defaultSoundPath)) {
                 defaultSoundPath = path.join(__dirname, '..', 'sounds', 'default.mp3');
             }
             
-            const soundToPlay = config[deviceId] || defaultSoundPath;
+            let soundToPlay = config[deviceId];
+            if (!soundToPlay || !fs.existsSync(soundToPlay)) {
+                soundToPlay = defaultSoundPath;
+            }
             
             player.play(soundToPlay, (err) => {
                 if (err) console.error(`[Error] Failed to play audio file: ${soundToPlay}`);
@@ -48,30 +51,45 @@ program
   .description('Customize sound for a specific device with an interactive UI')
   .action(async (vid, pid, file_audio) => {
       const config = getConfig();
-      
-      if (!vid) {
-          const res = await prompts({
-              type: 'text',
-              name: 'vid',
-              message: 'Enter the Vendor ID (VID) of the device (e.g., 0951):',
-              validate: value => value.length > 0 ? true : 'VID cannot be empty'
-          });
-          if (!res.vid) process.exit(0);
-          vid = res.vid;
-      }
-      
-      if (!pid) {
-          const res = await prompts({
-              type: 'text',
-              name: 'pid',
-              message: 'Enter the Product ID (PID) of the device (e.g., 1666):',
-              validate: value => value.length > 0 ? true : 'PID cannot be empty'
-          });
-          if (!res.pid) process.exit(0);
-          pid = res.pid;
-      }
+      let deviceId = 'default_sound';
 
-      const deviceId = `${vid}:${pid}`;
+      if (!vid && !pid) {
+          const modeRes = await prompts({
+              type: 'select',
+              name: 'mode',
+              message: 'What do you want to configure?',
+              choices: [
+                  { title: 'Default Sound (Applies to ALL USB devices)', value: 'default' },
+                  { title: 'Specific Device (Requires Vendor ID & Product ID)', value: 'specific' }
+              ]
+          });
+
+          if (!modeRes.mode) process.exit(0);
+
+          if (modeRes.mode === 'specific') {
+              const resVid = await prompts({
+                  type: 'text',
+                  name: 'vid',
+                  message: 'Enter the Vendor ID (VID) of the device (e.g., 0951):',
+                  validate: value => value.length > 0 ? true : 'VID cannot be empty'
+              });
+              if (!resVid.vid) process.exit(0);
+              
+              const resPid = await prompts({
+                  type: 'text',
+                  name: 'pid',
+                  message: 'Enter the Product ID (PID) of the device (e.g., 1666):',
+                  validate: value => value.length > 0 ? true : 'PID cannot be empty'
+              });
+              if (!resPid.pid) process.exit(0);
+              
+              deviceId = `${resVid.vid}:${resPid.pid}`;
+          }
+      } else {
+          if (vid && pid) {
+              deviceId = `${vid}:${pid}`;
+          }
+      }
 
       let absoluteAudioPath = '';
 
@@ -126,7 +144,11 @@ program
       config[deviceId] = absoluteAudioPath;
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
       
-      console.log(`\nSuccess! Sound for device [${deviceId}] has been set to:\n-> ${absoluteAudioPath}`);
+      if (deviceId === 'default_sound') {
+          console.log(`\nSuccess! The Default Sound has been set to:\n-> ${absoluteAudioPath}`);
+      } else {
+          console.log(`\nSuccess! Sound for device [${deviceId}] has been set to:\n-> ${absoluteAudioPath}`);
+      }
   });
 
 function runWindowsInstall() {
@@ -163,6 +185,10 @@ function runWindowsInstall() {
         console.log("Please close and reopen your terminal to apply PATH changes.");
         
         console.log("Starting the daemon in the background...");
+        
+        try {
+            execSync(`taskkill /F /FI "PID ne ${process.pid}" /IM usbsound.exe`, { stdio: 'ignore' });
+        } catch (e) {}
         const child = spawn(targetExe, ['start'], {
             detached: true,
             stdio: 'ignore',
@@ -294,7 +320,7 @@ program
              const installDir = path.join(process.env.LOCALAPPDATA, 'USBSound');
              
              try {
-                 execSync('taskkill /f /im usbsound.exe', { stdio: 'ignore' });
+                 execSync(`taskkill /F /FI "PID ne ${process.pid}" /IM usbsound.exe`, { stdio: 'ignore' });
                  console.log("[v] Stopped background process.");
              } catch (e) {}
 
