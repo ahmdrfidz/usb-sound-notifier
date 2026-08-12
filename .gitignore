@@ -1,0 +1,7 @@
+node_modules/
+dist/
+release/
+.usbsound-config.json
+*.exe
+*.log
+.env
