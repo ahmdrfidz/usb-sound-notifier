@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execSync, spawn } = require('child_process');
+const prompts = require('prompts');
 
 const configPath = path.join(os.homedir(), '.usbsound-config.json');
 
@@ -43,12 +44,79 @@ program
 
 // Command 2: Customations sounds via CLI
 program
-  .command('set-sound   ')
-  .description('Customize sound for a specific device')
-  .action((vid, pid, file_audio) => {
+  .command('set-sound [vid] [pid] [file_audio]')
+  .description('Customize sound for a specific device with an interactive UI')
+  .action(async (vid, pid, file_audio) => {
       const config = getConfig();
+      
+      if (!vid) {
+          const res = await prompts({
+              type: 'text',
+              name: 'vid',
+              message: 'Enter the Vendor ID (VID) of the device (e.g., 0951):',
+              validate: value => value.length > 0 ? true : 'VID cannot be empty'
+          });
+          if (!res.vid) process.exit(0);
+          vid = res.vid;
+      }
+      
+      if (!pid) {
+          const res = await prompts({
+              type: 'text',
+              name: 'pid',
+              message: 'Enter the Product ID (PID) of the device (e.g., 1666):',
+              validate: value => value.length > 0 ? true : 'PID cannot be empty'
+          });
+          if (!res.pid) process.exit(0);
+          pid = res.pid;
+      }
+
       const deviceId = `${vid}:${pid}`;
-      const absoluteAudioPath = path.resolve(file_audio);
+
+      let absoluteAudioPath = '';
+
+      if (file_audio) {
+          absoluteAudioPath = path.resolve(file_audio);
+      } else {
+          let soundsDir = path.join(path.dirname(process.execPath), 'sounds');
+          if (!fs.existsSync(soundsDir)) {
+              soundsDir = path.join(__dirname, '..', 'sounds');
+          }
+
+          let soundFiles = [];
+          if (fs.existsSync(soundsDir)) {
+              soundFiles = fs.readdirSync(soundsDir).filter(f => f.endsWith('.mp3') || f.endsWith('.wav'));
+          }
+
+          const choices = soundFiles.map(f => ({
+              title: f,
+              value: path.join(soundsDir, f)
+          }));
+          
+          choices.push({ title: 'Enter a custom path manually...', value: 'custom' });
+
+          const res = await prompts({
+              type: 'select',
+              name: 'soundPath',
+              message: `Select a sound for device [${deviceId}]:`,
+              choices: choices
+          });
+
+          if (!res.soundPath) process.exit(0);
+
+          if (res.soundPath === 'custom') {
+              const customRes = await prompts({
+                  type: 'text',
+                  name: 'path',
+                  message: 'Enter the absolute path to your audio file:',
+                  validate: value => fs.existsSync(path.resolve(value)) ? true : 'File not found! Please check the path.'
+              });
+              if (!customRes.path) process.exit(0);
+              absoluteAudioPath = path.resolve(customRes.path);
+          } else {
+              absoluteAudioPath = res.soundPath;
+          }
+      }
 
       if (!fs.existsSync(absoluteAudioPath)) {
           console.error("Audio file not found! Make sure the path is correct.");
@@ -58,7 +126,7 @@ program
       config[deviceId] = absoluteAudioPath;
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
       
-      console.log(`Success! Sound for device [${deviceId}] has been set to:\n-> ${absoluteAudioPath}`);
+      console.log(`\nSuccess! Sound for device [${deviceId}] has been set to:\n-> ${absoluteAudioPath}`);
   });
 
 function runWindowsInstall() {
@@ -67,12 +135,10 @@ function runWindowsInstall() {
         const installDir = path.join(process.env.LOCALAPPDATA, 'USBSound');
         const targetExe = path.join(installDir, 'usbsound.exe');
 
-        // 1. Create directory
         if (!fs.existsSync(installDir)) {
             fs.mkdirSync(installDir, { recursive: true });
         }
 
-        // 2. Copy current executable and sounds folder to install dir
         if (process.execPath !== targetExe) {
             fs.copyFileSync(process.execPath, targetExe);
             console.log(`[v] Copied executable to ${targetExe}`);
@@ -85,12 +151,10 @@ function runWindowsInstall() {
             }
         }
 
-        // 3. Add to Windows Startup (Registry)
         const regCommand = `reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "USBSoundDaemon" /t REG_SZ /d "\\"${targetExe}\\" start" /f`;
         execSync(regCommand, { stdio: 'ignore' });
         console.log("[v] Added to Windows Startup.");
 
-        // 4. Add to User PATH
         const psCommand = `$p = [Environment]::GetEnvironmentVariable('Path', 'User'); if($p -notlike '*${installDir}*') { [Environment]::SetEnvironmentVariable('Path', $p + ';${installDir}', 'User') }`;
         execSync(`powershell.exe -NoProfile -Command "${psCommand}"`, { stdio: 'ignore' });
         console.log("[v] Added to Environment PATH.");
@@ -98,7 +162,6 @@ function runWindowsInstall() {
         console.log("\nInstallation Complete! You can now use the 'usbsound' command everywhere.");
         console.log("Please close and reopen your terminal to apply PATH changes.");
         
-        // Auto start the daemon
         console.log("Starting the daemon in the background...");
         const child = spawn(targetExe, ['start'], {
             detached: true,
@@ -135,7 +198,6 @@ function runLinuxInstall() {
             }
         }
 
-        // Setup systemd user service
         const systemdDir = path.join(os.homedir(), '.config', 'systemd', 'user');
         if (!fs.existsSync(systemdDir)) {
             fs.mkdirSync(systemdDir, { recursive: true });
@@ -209,7 +271,6 @@ function runLinuxUninstall() {
     }
 }
 
-// Command 3: Self-Installer
 program
   .command('install')
   .description('Install the application to your system (Self-installer)')
@@ -223,7 +284,6 @@ program
     }
   });
 
-// Command 4: Self-Uninstaller
 program
   .command('uninstall')
   .description('Uninstall the application from your system')
@@ -233,24 +293,20 @@ program
              console.log("Starting uninstallation...");
              const installDir = path.join(process.env.LOCALAPPDATA, 'USBSound');
              
-             // 1. Stop background process
              try {
                  execSync('taskkill /f /im usbsound.exe', { stdio: 'ignore' });
                  console.log("[v] Stopped background process.");
-             } catch (e) {} // Ignore if not running
+             } catch (e) {}
 
-             // 2. Remove from Registry
              try {
                  execSync(`reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "USBSoundDaemon" /f`, { stdio: 'ignore' });
                  console.log("[v] Removed from Windows Startup.");
              } catch (e) {}
 
-             // 3. Remove from PATH
              const psCommand = `$p = [Environment]::GetEnvironmentVariable('Path', 'User'); if($p -like '*${installDir}*') { $newPath = ($p -split ';' | Where-Object { $_ -ne '${installDir}' -and $_ -ne '' }) -join ';'; [Environment]::SetEnvironmentVariable('Path', $newPath, 'User') }`;
              execSync(`powershell.exe -NoProfile -Command "${psCommand}"`, { stdio: 'ignore' });
              console.log("[v] Removed from Environment PATH.");
 
-             // Note: We can't delete the executable if it's currently running the uninstall command.
              if (process.execPath.includes(installDir)) {
                  console.log(`\n[!] Almost done! Please close this terminal and manually delete the folder:\n${installDir}`);
              } else {
@@ -282,7 +338,6 @@ if (!process.argv.slice(2).length) {
         const installDir = path.join(process.env.LOCALAPPDATA, 'USBSound');
         const targetExe = path.join(installDir, 'usbsound.exe');
         
-        // If double-clicked from outside the install directory (and not running via node)
         if (process.execPath !== targetExe && !process.execPath.toLowerCase().includes('node.exe')) {
             console.log("=========================================");
             console.log("    USB Sound Notifier - Auto Setup      ");
@@ -299,7 +354,6 @@ if (!process.argv.slice(2).length) {
         const installDir = path.join(os.homedir(), '.local', 'bin');
         const targetExe = path.join(installDir, 'usbsound');
         
-        // On Linux, you usually run from terminal, but we can offer auto-setup too.
         if (process.execPath !== targetExe && !process.execPath.includes('node')) {
             console.log("=========================================");
             console.log("    USB Sound Notifier - Auto Setup      ");

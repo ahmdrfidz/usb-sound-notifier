@@ -7,7 +7,6 @@ const releaseDir = path.join(rootDir, 'release');
 
 console.log('Preparing release folders...');
 
-// Pastikan build sudah selesai
 try {
     if (!fs.existsSync(path.join(rootDir, 'dist'))) {
         console.log('Running npm run build...');
@@ -18,7 +17,6 @@ try {
     process.exit(1);
 }
 
-// Buat folder release
 if (fs.existsSync(releaseDir)) {
     fs.rmSync(releaseDir, { recursive: true, force: true });
 }
@@ -33,19 +31,16 @@ platforms.forEach(platform => {
     const platformDir = path.join(releaseDir, `USB_Sound_Notifier_${platform.name}`);
     fs.mkdirSync(platformDir);
     
-    // Copy executable
     const exeSource = path.join(rootDir, 'dist', platform.exe);
     if (fs.existsSync(exeSource)) {
         fs.copyFileSync(exeSource, path.join(platformDir, platform.exe));
     }
     
-    // Copy sounds folder
     const soundsSource = path.join(rootDir, 'sounds');
     if (fs.existsSync(soundsSource)) {
         fs.cpSync(soundsSource, path.join(platformDir, 'sounds'), { recursive: true });
     }
     
-    // Copy README
     const readmeSource = path.join(rootDir, 'README.md');
     if (fs.existsSync(readmeSource)) {
         fs.copyFileSync(readmeSource, path.join(platformDir, 'README.md'));

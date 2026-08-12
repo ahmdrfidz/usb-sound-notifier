@@ -74,11 +74,16 @@ If you want to stop using and remove this program from your computer:
 ---
 
 ## Custom Sound Configuration
-You can configure different sounds for different devices based on their Vendor ID and Product ID (VID:PID).
+You can configure different sounds for different devices using the interactive setup menu.
 
-1. Find the VID and PID of your device (e.g., `0951:1666`).
+1. Open a terminal anywhere.
 2. Run the command:
    ```bash
-   usbsound set-sound 0951 1666 C:\path\to\audio.mp3
+   usbsound set-sound
    ```
+3. The interactive UI will guide you to:
+   - Enter your device's Vendor ID (VID) and Product ID (PID).
+   - Select a sound file directly from the `sounds/` folder using your arrow keys.
+   - Or, manually enter an absolute path to a custom audio file.
+
 *(For more information, run the command `usbsound --help`)*
